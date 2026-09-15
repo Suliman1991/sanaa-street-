@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>خريطة صنعاء التفاعلية</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+    
+    <style>
+        #map { height: 100vh; width: 100%; background: #222; }
+        body { margin: 0; padding: 0; font-family: sans-serif; }
+        .locate-btn {
+            position: absolute;
+            top: 10px;
+            left: 50px;
+            z-index: 1000;
+            background: white;
+            border: 2px solid rgba(0,0,0,0.2);
+            border-radius: 4px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+        }
+    </style>
+</head>
+<body>
+    <button class="locate-btn" onclick="locateUser()">🎯 موقعي</button>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+
+    <script>
+        // تفعيل Canvas لتوفير أقصى سرعة مع المضلعات الضخمة
+        var map = L.map('map', {
+            preferCanvas: true,
+            wheelDebounceTime: 150
+        }).setView([15.369444, 44.191007], 12);
+
+        // صور القمر الصناعي
+        L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+            attribution: 'Google Satellite'
+        }).addTo(map);
+
+        // تحميل ملفات GeoJSON بشكل تدريجي لتفادي تجميد المتصفح
+        var files = ['2.json', '4.json', '5f.json', '6.json', '7.json'];
+        
+        function loadFilesSequentially(index) {
+            if (index >= files.length) return;
+            fetch(files[index])
+                .then(response => response.json())
+                .then(data => {
+                    L.geoJSON(data, {
+                        style: { color: "#ff7800", weight: 1, opacity: 0.75 },
+                        onEachFeature: function (feature, layer) {
+                            if (feature.properties) {
+                                var popupContent = "<table border='1' style='border-collapse:collapse; width:100%; font-size:11px;'>";
+                                for (var p in feature.properties) {
+                                    popupContent += "<tr><th style='padding:2px; background:#f0f0f0;'>" + p + "</th><td style='padding:2px;'>" + feature.properties[p] + "</td></tr>";
+                                }
+                                popupContent += "</table>";
+                                layer.bindPopup(popupContent);
+                            }
+                        }
+                    }).addTo(map);
+                    // تحميل الملف التالي بعد فترة وجيزة لتخفيف العبء على المعالج
+                    setTimeout(function() { loadFilesSequentially(index + 1); }, 200);
+                })
+                .catch(err => {
+                    console.log('Error loading: ' + files[index], err);
+                    loadFilesSequentially(index + 1);
+                });
+        }
+
+        // بدء تحميل البيانات فور جاهزية الخريطة
+        setTimeout(function() { loadFilesSequentially(0); }, 300);
+
+        // محرك بحث مرن جداً يفضل صنعاء ولا يحظر النتائج القريبة
+        var geocoder = L.Control.Geocoder.nominatim({
+            geocodingQueryParams: {
+                'accept-language': 'ar',
+                'countrycodes': 'ye',
+                'viewbox': '44.00,15.60,44.40,15.10',
+                'bounded': 0 // عدم حظر النتائج خارج المستطيل، بل إعطاء الأولوية لصنعاء فقط
+            }
+        });
+
+        L.Control.geocoder({
+            geocoder: geocoder,
+            defaultMarkGeocode: false,
+            position: 'topright',
+            placeholder: '🔍 ابحث (الحشيشية، نقم، جامعة صنعاء...)'
+        })
+        .on('markgeocode', function(e) {
+            var center = e.geocode.center;
+            map.setView(center, 16);
+            L.popup().setLatLng(center).setContent(e.geocode.name).openOn(map);
+        })
+        .addTo(map);
+
+        // تحديد موقع المستخدم
+        var userMarker;
+        function locateUser() {
+            map.locate({setView: true, maxZoom: 17});
+        }
+
+        map.on('locationfound', function(e) {
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.marker(e.latlng).addTo(map).bindPopup("أنت هنا حالياً").openPopup();
+        });
+
+        map.on('locationerror', function() {
+            alert("يرجى تفعيل الـ GPS والسماح للمتصفح بالوصول للموقع.");
+        });
+    </script>
+</body>
+</html>
+
