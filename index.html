@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>خريطة صنعاء التفاعلية</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+    
+    <style>
+        #map { height: 100vh; width: 100%; }
+        body { margin: 0; padding: 0; font-family: sans-serif; }
+        .locate-btn {
+            position: absolute;
+            top: 10px;
+            left: 50px;
+            z-index: 1000;
+            background: white;
+            border: 2px solid rgba(0,0,0,0.2);
+            border-radius: 4px;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+        }
+    </style>
+</head>
+<body>
+    <button class="locate-btn" onclick="locateUser()">🎯 موقعي</button>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+
+    <script>
+        var map = L.map('map', {
+            preferCanvas: true
+        }).setView([15.369444, 44.191007], 12);
+
+        // طبقة Google Satellite
+        L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+            attribution: 'Google Satellite'
+        }).addTo(map);
+
+        // تحميل ملفات GeoJSON الخاصة بك
+        var files = ['2.json', '4.json', '5f.json', '6.json', '7.json'];
+        files.forEach(function(file) {
+            fetch(file)
+                .then(response => response.json())
+                .then(data => {
+                    L.geoJSON(data, {
+                        style: { color: "#ff7800", weight: 1.5, opacity: 0.8 },
+                        onEachFeature: function (feature, layer) {
+                            if (feature.properties) {
+                                var popupContent = "<table border='1' style='border-collapse:collapse; width:100%; font-size:12px;'>";
+                                for (var p in feature.properties) {
+                                    popupContent += "<tr><th style='padding:3px; background:#f0f0f0;'>" + p + "</th><td style='padding:3px;'>" + feature.properties[p] + "</td></tr>";
+                                }
+                                popupContent += "</table>";
+                                layer.bindPopup(popupContent);
+                            }
+                        }
+                    }).addTo(map);
+                }).catch(err => console.log('Error: ' + file, err));
+        });
+
+        // تخصيص محرك البحث وتحديد نطاق أمانة العاصمة صنعاء ومحيطها
+        var sanaaBounds = L.latLngBounds(
+            L.latLng(15.20, 44.05), // الجنوب الغربي لصنعاء
+            L.latLng(15.55, 44.35)  // الشمال الشرقي لصنعاء
+        );
+
+        var geocoder = L.Control.Geocoder.nominatim({
+            geocodingQueryParams: {
+                'accept-language': 'ar',
+                'countrycodes': 'ye',
+                'viewbox': '44.05,15.55,44.35,15.20', // تقييد نتائج البحث بنطاق صنعاء
+                'bounded': 1
+            }
+        });
+
+        L.Control.geocoder({
+            geocoder: geocoder,
+            defaultMarkGeocode: false,
+            position: 'topright',
+            placeholder: '🔍 ابحث في صنعاء (جامعة صنعاء، نقم...)'
+        })
+        .on('markgeocode', function(e) {
+            var center = e.geocode.center;
+            map.setView(center, 16);
+            L.popup().setLatLng(center).setContent(e.geocode.name).openOn(map);
+        })
+        .addTo(map);
+
+        // تحديد الموقع الحالي للمستخدم
+        var userMarker;
+        function locateUser() {
+            map.locate({setView: true, maxZoom: 17});
+        }
+
+        map.on('locationfound', function(e) {
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.marker(e.latlng).addTo(map).bindPopup("أنت هنا حالياً").openPopup();
+        });
+
+        map.on('locationerror', function() {
+            alert("يرجى تفعيل الـ GPS والسماح للمتصفح بالوصول للموقع.");
+        });
+    </script>
+</body>
+</html>
+
