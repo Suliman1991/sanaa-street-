@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>خريطة صنعاء التفاعلية</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-search@3.0.2/dist/leaflet-search.min.css" />
+    
+    <style>
+        #map { height: 100vh; width: 100%; background: #222; }
+        body { margin: 0; padding: 0; font-family: sans-serif; }
+        .locate-btn {
+            position: absolute;
+            top: 10px;
+            left: 50px;
+            z-index: 1000;
+            background: white;
+            border: 2px solid rgba(0,0,0,0.2);
+            border-radius: 4px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+        }
+        .leaflet-control-search {
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+    <button class="locate-btn" onclick="locateUser()">🎯 موقعي</button>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-search@3.0.2/dist/leaflet-search.min.js"></script>
+
+    <script>
+        var map = L.map('map', {
+            preferCanvas: true,
+            wheelDebounceTime: 150
+        }).setView([15.369444, 44.191007], 13);
+
+        // خلفية قمر صناعي من Google
+        L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+            attribution: 'Google Satellite'
+        }).addTo(map);
+
+        // مجموعة الطبقات للبحث المحلي في الملفات
+        var searchFeaturesGroup = L.layerGroup().addTo(map);
+        var files = ['2.json', '4.json', '5f.json', '6.json', '7.json'];
+
+        function loadFilesSequentially(index) {
+            if (index >= files.length) return;
+            fetch(files[index])
+                .then(response => response.json())
+                .then(data => {
+                    var geoLayer = L.geoJSON(data, {
+                        style: { color: "#ff7800", weight: 1.5, opacity: 0.8 },
+                        onEachFeature: function (feature, layer) {
+                            var searchText = "";
+                            if (feature.properties) {
+                                var popupContent = "<table border='1' style='border-collapse:collapse; width:100%; font-size:11px;'>";
+                                for (var p in feature.properties) {
+                                    var val = feature.properties[p];
+                                    searchText += val + " ";
+                                    popupContent += "<tr><th style='padding:2px; background:#f0f0f0;'>" + p + "</th><td style='padding:2px;'>" + val + "</td></tr>";
+                                }
+                                popupContent += "</table>";
+                                layer.bindPopup(popupContent);
+                            }
+                            // ربط النص المكتوب داخل خصائص العنصر بمحرك البحث
+                            layer.title = searchText.trim();
+                            searchFeaturesGroup.addLayer(layer);
+                        }
+                    });
+                    setTimeout(function() { loadFilesSequentially(index + 1); }, 150);
+                })
+                .catch(err => {
+                    console.log('Error: ' + files[index], err);
+                    loadFilesSequentially(index + 1);
+                });
+        }
+
+        setTimeout(function() { loadFilesSequentially(0); }, 200);
+
+        // محرك بحث يبحث في بياناتك وفي Nominatim بنفس الوقت
+        var searchControl = new L.Control.Search({
+            layer: searchFeaturesGroup,
+            propertyName: 'title',
+            initial: false,
+            zoom: 17,
+            marker: false,
+            position: 'topright',
+            textPlaceholder: '🔍 ابحث عن (محل، بلوك، شارع...)'
+        });
+
+        // إذا لم يجد الاسم في بيانات الملفات، يذهب للبحث في الخريطة العامة
+        searchControl.on('search:locationfound', function(e) {
+            if(e.layer) {
+                e.layer.openPopup();
+            }
+        });
+
+        map.addControl(searchControl);
+
+        // زر تحديد الموقع
+        var userMarker;
+        function locateUser() {
+            map.locate({setView: true, maxZoom: 17});
+        }
+
+        map.on('locationfound', function(e) {
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.marker(e.latlng).addTo(map).bindPopup("أنت هنا حالياً").openPopup();
+        });
+
+        map.on('locationerror', function() {
+            alert("يرجى تفعيل الـ GPS والسماح للمتصفح بالوصول للموقع.");
+        });
+    </script>
+</body>
+</html>
