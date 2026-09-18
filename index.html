@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>خريطة صنعاء التفاعلية</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        #map { height: 100vh; width: 100%; background: #222; }
+        body { margin: 0; padding: 0; font-family: sans-serif; }
+        
+        /* شريط بحث مصغر وأنيق للجوال */
+        .search-box-container {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 3px;
+            border-radius: 6px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            width: 200px;
+        }
+        
+        .search-input-field {
+            width: 100%;
+            padding: 5px 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 12px;
+            outline: none;
+        }
+        
+        .search-btn {
+            background: #ff7800;
+            color: white;
+            border: none;
+            padding: 5px 8px;
+            margin-right: 3px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 11px;
+            white-space: nowrap;
+        }
+
+        .locate-btn {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: white;
+            border: 1px solid rgba(0,0,0,0.2);
+            border-radius: 6px;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 12px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+
+    <button class="locate-btn" onclick="locateUser()">🎯 موقعي</button>
+    
+    <div class="search-box-container">
+        <input type="text" id="searchInput" class="search-input-field" placeholder="🔍 اسم الحي أو البلوك..." onkeydown="if(event.key === 'Enter') performGlobalSearch();">
+        <button class="search-btn" onclick="performGlobalSearch()">بحث</button>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        var map = L.map('map', {
+            preferCanvas: true
+        }).setView([15.369444, 44.191007], 12);
+
+        L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+            attribution: 'Google Satellite'
+        }).addTo(map);
+
+        var allFeaturesLayers = [];
+        var files = ['2.json', '32.json', '4.json', '5f.json', '6.json', '7.json', '8.json', '9.json'];
+
+        // تحميل ملفات البلوكات
+        Promise.all(files.map(file => 
+            fetch(file)
+                .then(res => res.ok ? res.json() : null)
+                .catch(() => null)
+        )).then(results => {
+            results.forEach(data => {
+                if (!data) return;
+                L.geoJSON(data, {
+                    style: { color: "#ff7800", weight: 1.2, opacity: 0.8 },
+                    onEachFeature: function (feature, layer) {
+                        var searchText = "";
+                        if (feature.properties) {
+                            var popupContent = "<table border='1' style='border-collapse:collapse; width:100%; font-size:11px;'>";
+                            for (var p in feature.properties) {
+                                var val = feature.properties[p];
+                                searchText += val + " ";
+                                popupContent += "<tr><th style='padding:2px; background:#f0f0f0;'>" + p + "</th><td style='padding:2px;'>" + val + "</td></tr>";
+                            }
+                            popupContent += "</table>";
+                            layer.bindPopup(popupContent);
+                        }
+                        allFeaturesLayers.push({ text: searchText.trim().toLowerCase(), layer: layer });
+                    }
+                }).addTo(map);
+            });
+        });
+
+        // إظهار الإحداثيات بنظام Decimal Degrees عند الضغط على أي نقطة
+        map.on('click', function(e) {
+            var lat = e.latlng.lat.toFixed(6);
+            var lng = e.latlng.lng.toFixed(6);
+            
+            L.popup()
+                .setLatLng(e.latlng)
+                .setContent("<div style='text-align:center; font-size:12px;'><b>الإحداثيات (DD):</b><br>Lat: " + lat + "<br>Lng: " + lng + "</div>")
+                .openOn(map);
+        });
+
+        // محرك البحث المعدل لتفادي حظر الاتصال
+        function performGlobalSearch() {
+            var query = document.getElementById('searchInput').value.trim();
+            if (!query) return;
+
+            var lowerQuery = query.toLowerCase();
+            var foundInBlock = false;
+
+            // 1. البحث في البلوكات المرفوقة أولاً
+            for (var i = 0; i < allFeaturesLayers.length; i++) {
+                var item = allFeaturesLayers[i];
+                if (item.text.includes(lowerQuery)) {
+                    var layer = item.layer;
+                    if (layer.getBounds) map.fitBounds(layer.getBounds(), { maxZoom: 18 });
+                    else if (layer.getLatLng) map.setView(layer.getLatLng(), 18);
+                    layer.openPopup();
+                    foundInBlock = true;
+                    break;
+                }
+            }
+
+            // 2. البحث في الخريطة الخارجية مع معالجة الرابط بدقة لتفادي فشل الاتصال
+            if (!foundInBlock) {
+                var fullQuery = query + ", صنعاء, اليمن";
+                var searchUrl = 'https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(fullQuery) + '&addressdetails=1&limit=1';
+
+                fetch(searchUrl, {
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error("شبكة");
+                    return response.json();
+                })
+                .then(data => {
+                    if (data && data.length > 0) {
+                        var lat = parseFloat(data[0].lat);
+                        var lon = parseFloat(data[0].lon);
+                        
+                        map.setView([lat, lon], 16);
+                        L.popup()
+                            .setLatLng([lat, lon])
+                            .setContent("<div style='text-align:center;'><b>" + data[0].display_name.split(',')[0] + "</b><br>Lat: " + lat.toFixed(6) + "<br>Lng: " + lon.toFixed(6) + "</div>")
+                            .openOn(map);
+                    } else {
+                        alert("لم يتم العثور على المنطقة: " + query);
+                    }
+                })
+                .catch(err => {
+                    alert("تعذر الاتصال بالخدمة. يرجى التأكد من تشغيل الإنترنت أو تجربة اسم حي آخر.");
+                });
+            }
+        }
+
+        var userMarker;
+        function locateUser() {
+            map.locate({setView: true, maxZoom: 17});
+        }
+
+        map.on('locationfound', function(e) {
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.marker(e.latlng).addTo(map).bindPopup("موقعي الحالي<br>Lat: " + e.latlng.lat.toFixed(6) + "<br>Lng: " + e.latlng.lng.toFixed(6)).openPopup();
+        });
+
+        map.on('locationerror', function() {
+            alert("يرجى تفعيل الـ GPS والسماح للمتصفح بالوصول للموقع.");
+        });
+    </script>
+</body>
+</html>
